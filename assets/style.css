@@ -75,6 +75,22 @@ body {
   padding: 10px 0 8px;
 }
 .bar-inner { max-width: var(--maxw); margin: 0 auto; padding: 0 16px; }
+/* ---------------- 分頁列 ---------------- */
+.tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 8px; }
+.tabs .tab {
+  flex: 1 1 0; min-width: 0; padding: 9px 6px; border-radius: 10px; cursor: pointer;
+  border: 1.5px solid transparent; background: transparent; color: var(--muted);
+  font-family: inherit; font-size: .92rem; font-weight: 700;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.tabs .tab:hover { color: var(--ink); }
+.tabs .tab[aria-selected="true"] {
+  background: var(--card); color: var(--brand); border-color: var(--line);
+  box-shadow: 0 1px 2px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark) { .tabs .tab[aria-selected="true"] { color: #8fb6de; } }
+.pane[hidden] { display: none; }
+
 .switch { display: flex; gap: 8px; justify-content: center; }
 .switch button {
   flex: 1 1 0; min-width: 0;
@@ -254,9 +270,82 @@ section { margin-top: 26px; }
 
 footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 26px 16px 8px; }
 
+/* ---------------- 匯率換算 ---------------- */
+.fx-rate { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: .95rem; }
+.fx-rate b { font-size: 1.35rem; color: var(--brand-2); font-variant-numeric: tabular-nums; }
+.fx-grid { display: flex; align-items: flex-end; gap: 10px; margin-top: 14px; }
+.fx-grid label { flex: 1 1 0; min-width: 0; font-size: .78rem; color: var(--muted); font-weight: 600; }
+.fx-eq { padding-bottom: 10px; color: var(--muted); font-size: 1.1rem; }
+.fx-manual { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: .88rem; }
+#fxManualRow { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+input[type="text"], input[type="number"], input[type="time"], input[type="date"], select {
+  width: 100%; padding: 9px 10px; margin-top: 4px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); font-family: inherit; font-size: .95rem;
+}
+input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+
+/* ---------------- 成員 ---------------- */
+.members { display: grid; gap: 8px; }
+@media (min-width: 560px) { .members { grid-template-columns: 1fr 1fr; } }
+.members label { font-size: .78rem; color: var(--muted); font-weight: 600; }
+
+/* ---------------- 記帳表單 ---------------- */
+.exp-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.exp-form label { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.exp-form .f-wide { grid-column: 1 / -1; }
+.f-label { font-size: .78rem; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.sharers { display: flex; flex-wrap: wrap; gap: 7px; }
+.sharers label {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 11px; border: 1.5px solid var(--line); border-radius: 99px;
+  font-size: .88rem; color: var(--ink); font-weight: 600;
+}
+.sharers label.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.sharers input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+.share-quick { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+.share-count { font-size: .82rem; color: var(--muted); }
+.btn-primary {
+  padding: 11px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--brand); color: #fff; font-family: inherit; font-size: .98rem; font-weight: 700;
+}
+.btn-primary:hover { background: #2d5580; }
+.btn-primary:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+
+/* ---------------- 代墊明細 ---------------- */
+.exp-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.exp-row:last-child { border-bottom: 0; }
+.exp-main { flex: 1 1 auto; min-width: 0; }
+.exp-main .t { font-weight: 700; font-size: .96rem; }
+.exp-main .s { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+.exp-amt { flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+.exp-amt .a { font-weight: 800; font-size: 1rem; }
+.exp-amt .b { font-size: .76rem; color: var(--muted); }
+.empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: .9rem; }
+
+/* ---------------- 結算 ---------------- */
+.bal { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: .92rem; }
+.bal:last-child { border-bottom: 0; }
+.bal .who { font-weight: 700; }
+.bal .num { font-variant-numeric: tabular-nums; text-align: right; }
+.bal .plus  { color: #2f7048; font-weight: 800; }
+.bal .minus { color: #b3352f; font-weight: 800; }
+.bal small { display: block; color: var(--muted); font-size: .76rem; font-weight: 500; }
+.pay {
+  display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+  border-bottom: 1px solid var(--line); font-size: .95rem;
+}
+.pay:last-child { border-bottom: 0; }
+.pay .arrow { color: var(--muted); }
+.pay .amt { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pay .amt small { display: block; font-weight: 500; font-size: .74rem; color: var(--muted); text-align: right; }
+.total-row { display: flex; justify-content: space-between; padding: 12px 14px; background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 700; }
+
 /* ---------------- 列印 ---------------- */
 @media print {
-  .bar, .add-row, .del, .tools, .swap-item input { display: none !important; }
+  .bar, .add-row, .del, .tools, .swap-item input, .exp-form, .fx-manual, #fxReload { display: none !important; }
+  .pane[hidden] { display: block !important; }
   body { background: #fff; font-size: 11pt; }
   .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
   .hero { background: #fff !important; color: #000; }

@@ -1,16 +1,16 @@
 /* =====================================================================
  * 2026 京阪奈行程表 ── 互動邏輯
- *  - 晴天／雨天／全部 一鍵切換
- *  - 可替換行程模組（勾選即插入當天時間軸）
- *  - 自訂行程（直接在網頁上新增，存在瀏覽器）
- *  - 行前 Checklist 勾選狀態自動保存
- * 資料全部來自 data/itinerary.js 的 TRIP 物件。
+ *  分頁 1 行程：晴天／雨天切換、可替換模組、自訂行程
+ *  分頁 2 資訊：行前 Checklist、航班、住宿、交通、緊急聯絡
+ *  分頁 3 分帳：日幣匯率換算、代墊紀錄、自動結算
+ * 行程內容全部來自 data/itinerary.js 的 TRIP 物件。
  * ===================================================================== */
 (function () {
   'use strict';
 
   var KEY = 'jp2026.v1.';
   var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
   /* ---------- 小工具 ---------- */
   function load(k, dflt) {
@@ -35,18 +35,32 @@
     var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
+  function num(n) { return Math.round(n).toLocaleString('en-US'); }
+  function yen(n) { return '¥' + num(n); }
+  function ntd(n) { return 'NT$' + num(n); }
 
   /* ---------- 狀態 ---------- */
+  var PEOPLE = (TRIP.meta && TRIP.meta.people) || 4;
+  var defaultMembers = ['我'];
+  for (var i = 2; i <= PEOPLE; i++) defaultMembers.push('成員 ' + i);
+
   var state = {
-    w: load('w', 'sun'),                 // 'sun' | 'rain' | 'both'
-    checks: load('checks', {}),          // { checkboxId: true }
-    extras: load('extras', null),        // { extraId: true/false }，null = 用資料檔預設
-    custom: load('custom', [])           // 自訂行程
+    tab: load('tab', 'plan'),
+    w: load('w', 'sun'),
+    checks: load('checks', {}),
+    extras: load('extras', null),
+    custom: load('custom', []),
+    members: load('members', defaultMembers),
+    expenses: load('expenses', []),
+    fx: load('fx', { rate: 0.21, at: '', src: '預設值' }),
+    fxManual: load('fxManual', null)   // 手動指定時為數字，否則 null
   };
   if (!state.extras) {
     state.extras = {};
     TRIP.extras.forEach(function (e) { state.extras[e.id] = !!e.on; });
   }
+  function rate() { return state.fxManual != null ? state.fxManual : state.fx.rate; }
+  function toJPY(amount, cur) { return cur === 'TWD' ? amount / rate() : amount; }
 
   /* ================= 頁首 ================= */
   function renderHero() {
@@ -62,7 +76,17 @@
     document.title = TRIP.meta.title + '｜' + TRIP.meta.subtitle;
   }
 
-  /* ================= 航班 / 住宿 / 交通 ================= */
+  /* ================= 分頁 ================= */
+  function setTab(name) {
+    state.tab = name;
+    save('tab', name);
+    $$('.tab').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.tab === name); });
+    $$('.pane').forEach(function (p) { p.hidden = p.dataset.pane !== name; });
+    $('#weatherBar').hidden = name !== 'plan';
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
+
+  /* ================= 航班 / 住宿 / 交通 / 緊急 ================= */
   function renderInfo() {
     $('#flights').innerHTML = TRIP.flights.map(function (f) {
       return '<div class="card flight card-pad">' +
@@ -91,30 +115,15 @@
   /* ================= Checklist ================= */
   function renderChecklist() {
     var html = '', n = 0;
-    TRIP.tickets.forEach(function (t, i) {
-      html += chkRow('tk' + i, t.label, t.note);
-      n++;
-    });
-    var ticketBlock = '<div class="cl-cat">0. 出發前必須先線上訂好</div>' + html;
-
-    var rest = '';
+    TRIP.tickets.forEach(function (t, i) { html += chkRow('tk' + i, t.label, t.note); n++; });
+    var out = '<div class="cl-cat">0. 出發前必須先線上訂好</div>' + html;
     TRIP.checklist.forEach(function (g, gi) {
-      rest += '<div class="cl-cat">' + esc(g.cat) + '</div>';
-      g.items.forEach(function (it, ii) { rest += chkRow('c' + gi + '_' + ii, it, ''); n++; });
+      out += '<div class="cl-cat">' + esc(g.cat) + '</div>';
+      g.items.forEach(function (it, ii) { out += chkRow('c' + gi + '_' + ii, it, ''); n++; });
     });
-
-    $('#checklist').innerHTML = ticketBlock + rest;
+    $('#checklist').innerHTML = out;
     $('#clTotal').textContent = n;
-    bindChecks();
-    updateProgress();
-  }
-  function chkRow(id, label, note) {
-    var on = !!state.checks[id];
-    return '<label class="chk"><input type="checkbox" data-chk="' + id + '"' + (on ? ' checked' : '') +
-      '><span>' + esc(label) + (note ? '<small>' + esc(note) + '</small>' : '') + '</span></label>';
-  }
-  function bindChecks() {
-    Array.prototype.forEach.call(document.querySelectorAll('[data-chk]'), function (box) {
+    $$('[data-chk]').forEach(function (box) {
       box.addEventListener('change', function () {
         if (box.checked) state.checks[box.dataset.chk] = true;
         else delete state.checks[box.dataset.chk];
@@ -122,10 +131,14 @@
         updateProgress();
       });
     });
+    updateProgress();
+  }
+  function chkRow(id, label, note) {
+    return '<label class="chk"><input type="checkbox" data-chk="' + id + '"' + (state.checks[id] ? ' checked' : '') +
+      '><span>' + esc(label) + (note ? '<small>' + esc(note) + '</small>' : '') + '</span></label>';
   }
   function updateProgress() {
-    var all = document.querySelectorAll('[data-chk]').length;
-    var done = document.querySelectorAll('[data-chk]:checked').length;
+    var all = $$('[data-chk]').length, done = $$('[data-chk]:checked').length;
     $('#clDone').textContent = done;
     $('#clBar').style.width = all ? (done / all * 100) + '%' : '0';
   }
@@ -140,24 +153,17 @@
       }
     });
     state.custom.forEach(function (c) {
-      if (c.day === day.id) {
-        list.push({ t: c.t, title: c.title, desc: c.desc, tag: c.tag || '景點', w: 'all', custom: c.id });
-      }
+      if (c.day === day.id) list.push({ t: c.t, title: c.title, desc: c.desc, tag: c.tag || '景點', w: 'all', custom: c.id });
     });
     return list.sort(function (a, b) { return a.t < b.t ? -1 : a.t > b.t ? 1 : 0; });
   }
-
-  function visible(it) {
-    return state.w === 'both' || it.w === 'all' || it.w === state.w;
-  }
+  function visible(it) { return state.w === 'both' || it.w === 'all' || it.w === state.w; }
 
   function renderDays() {
     var today = todayISO();
     $('#days').innerHTML = TRIP.days.map(function (day) {
       var isToday = day.date === today;
-      var list = itemsForDay(day).filter(visible);
-
-      var rows = list.map(function (it) {
+      var rows = itemsForDay(day).filter(visible).map(function (it) {
         var badges = '';
         if (it.tag) badges += '<span class="tag tag-' + esc(it.tag) + '">' + esc(it.tag) + '</span>';
         if (it.w === 'sun')  badges += '<span class="wmark sun">☀️ 晴天限定</span>';
@@ -166,15 +172,12 @@
         if (it.custom) badges += '<span class="wmark plus">＋ 自訂</span>';
         if (it.place)  badges += '<a class="map" target="_blank" rel="noopener" href="' + mapURL(it.place) + '">📍 地圖</a>';
         if (it.custom) badges += '<button class="del" data-del="' + esc(it.custom) + '" title="刪除">✕</button>';
-
-        return '<li>' +
-          '<div class="time">' + esc(it.time || it.t) + '</div>' +
-          '<div class="body">' +
-            '<div class="meta">' + badges + '</div>' +
-            '<div class="ttl">' + esc(it.title) + '</div>' +
-            (it.desc ? '<div class="desc">' + esc(it.desc) + '</div>' : '') +
-            (it.tips && it.tips.length ? '<ul class="tips">' + it.tips.map(function (x) {
-              return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+        return '<li><div class="time">' + esc(it.time || it.t) + '</div><div class="body">' +
+          '<div class="meta">' + badges + '</div>' +
+          '<div class="ttl">' + esc(it.title) + '</div>' +
+          (it.desc ? '<div class="desc">' + esc(it.desc) + '</div>' : '') +
+          (it.tips && it.tips.length ? '<ul class="tips">' + it.tips.map(function (x) {
+            return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
           '</div></li>';
       }).join('');
 
@@ -199,50 +202,40 @@
             '<div class="row"><button class="tool" data-save="' + day.id + '">加入行程</button>' +
             '<button class="tool" data-cancel="' + day.id + '">取消</button></div>' +
           '</div>' +
-        '</div>' +
-      '</div>';
+        '</div></div>';
     }).join('');
 
     $('#daynav').innerHTML = TRIP.days.map(function (d) {
       return '<a href="#' + d.id + '" class="' + (d.date === today ? 'today' : '') + '">D' + d.no + ' ' + esc(d.label.slice(0, 4)) + '</a>';
     }).join('');
-
     bindDayButtons();
   }
 
   function bindDayButtons() {
-    Array.prototype.forEach.call(document.querySelectorAll('[data-add]'), function (b) {
+    $$('[data-add]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var f = document.querySelector('[data-form="' + b.dataset.add + '"]');
+        var f = $('[data-form="' + b.dataset.add + '"]');
         f.hidden = !f.hidden;
         if (!f.hidden) f.querySelector('[data-f="title"]').focus();
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-cancel]'), function (b) {
-      b.addEventListener('click', function () {
-        document.querySelector('[data-form="' + b.dataset.cancel + '"]').hidden = true;
-      });
+    $$('[data-cancel]').forEach(function (b) {
+      b.addEventListener('click', function () { $('[data-form="' + b.dataset.cancel + '"]').hidden = true; });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    $$('[data-save]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var dayId = b.dataset.save;
-        var f = document.querySelector('[data-form="' + dayId + '"]');
+        var dayId = b.dataset.save, f = $('[data-form="' + dayId + '"]');
         var title = f.querySelector('[data-f="title"]').value.trim();
         if (!title) { f.querySelector('[data-f="title"]').focus(); return; }
-        state.custom.push({
-          id: 'u' + Date.now(),
-          day: dayId,
-          t: f.querySelector('[data-f="t"]').value || '12:00',
-          title: title,
-          desc: f.querySelector('[data-f="desc"]').value.trim()
-        });
+        state.custom.push({ id: 'u' + Date.now(), day: dayId, t: f.querySelector('[data-f="t"]').value || '12:00',
+                            title: title, desc: f.querySelector('[data-f="desc"]').value.trim() });
         save('custom', state.custom);
         renderDays();
         var el = document.getElementById(dayId);
         if (el) el.scrollIntoView({ block: 'nearest' });
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
+    $$('[data-del]').forEach(function (b) {
       b.addEventListener('click', function () {
         state.custom = state.custom.filter(function (c) { return c.id !== b.dataset.del; });
         save('custom', state.custom);
@@ -255,7 +248,6 @@
   function renderSwap() {
     var dayName = {};
     TRIP.days.forEach(function (d) { dayName[d.id] = 'DAY ' + d.no; });
-
     $('#swap').innerHTML = TRIP.extras.map(function (e) {
       var on = !!state.extras[e.id];
       return '<label class="swap-item' + (on ? ' on' : '') + '">' +
@@ -265,8 +257,7 @@
         (e.why ? '<span class="sw"><b>取捨：</b>' + esc(e.why) + '</span>' : '') +
         '</span></label>';
     }).join('');
-
-    Array.prototype.forEach.call(document.querySelectorAll('[data-ex]'), function (box) {
+    $$('[data-ex]').forEach(function (box) {
       box.addEventListener('change', function () {
         state.extras[box.dataset.ex] = box.checked;
         save('extras', state.extras);
@@ -287,21 +278,305 @@
     renderDays();
   }
 
+  /* =====================================================================
+   *  匯率換算
+   * ===================================================================== */
+  var FX_SOURCES = [
+    { url: 'https://open.er-api.com/v6/latest/JPY',
+      pick: function (d) { return d && d.rates && d.rates.TWD; },
+      when: function (d) { return (d.time_last_update_utc || '').slice(5, 16); }, name: 'open.er-api.com' },
+    { url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/jpy.json',
+      pick: function (d) { return d && d.jpy && d.jpy.twd; },
+      when: function (d) { return d.date || ''; }, name: 'currency-api' }
+  ];
+
+  function fetchRate(idx) {
+    idx = idx || 0;
+    if (idx >= FX_SOURCES.length) { renderFX('抓不到即時匯率，沿用上次的數字'); return; }
+    var src = FX_SOURCES[idx];
+    $('#fxMeta').textContent = '更新中…';
+    fetch(src.url, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var v = src.pick(d);
+        if (!v) throw new Error('no rate');
+        state.fx = { rate: v, at: src.when(d) || todayISO(), src: src.name };
+        save('fx', state.fx);
+        renderFX();
+      })
+      .catch(function () { fetchRate(idx + 1); });
+  }
+
+  function renderFX(errMsg) {
+    var r = rate();
+    $('#fxHead').textContent = (r * 1000).toFixed(0);
+    $('#fxMeta').textContent = state.fxManual != null
+      ? '手動匯率 1 JPY = ' + state.fxManual + ' TWD'
+      : (errMsg ? '⚠️ ' + errMsg + '（' + (state.fx.at || '—') + '）'
+                : '即時匯率 · ' + (state.fx.at || '—') + ' · ' + (state.fx.src || ''));
+    if (document.activeElement !== $('#fxJPY') && document.activeElement !== $('#fxTWD')) {
+      var j = parseFloat($('#fxJPY').value);
+      if (!isNaN(j)) $('#fxTWD').value = (j * r).toFixed(1);
+    }
+    renderExpenses();
+  }
+
+  function bindFX() {
+    $('#fxJPY').addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      $('#fxTWD').value = isNaN(v) ? '' : (v * rate()).toFixed(1);
+    });
+    $('#fxTWD').addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      $('#fxJPY').value = isNaN(v) ? '' : (v / rate()).toFixed(0);
+    });
+    $('#fxReload').addEventListener('click', function () { fetchRate(0); });
+    $('#fxManual').checked = state.fxManual != null;
+    $('#fxManualRow').hidden = state.fxManual == null;
+    if (state.fxManual != null) $('#fxManualVal').value = state.fxManual;
+    $('#fxManual').addEventListener('change', function () {
+      $('#fxManualRow').hidden = !this.checked;
+      if (!this.checked) { state.fxManual = null; save('fxManual', null); renderFX(); }
+      else { $('#fxManualVal').value = $('#fxManualVal').value || state.fx.rate.toFixed(4); $('#fxManualVal').focus(); }
+    });
+    $('#fxManualSave').addEventListener('click', function () {
+      var v = parseFloat($('#fxManualVal').value);
+      if (isNaN(v) || v <= 0) { $('#fxManualVal').focus(); return; }
+      state.fxManual = v; save('fxManual', v); renderFX();
+    });
+  }
+
+  /* =====================================================================
+   *  分帳
+   * ===================================================================== */
+  function renderMembers() {
+    $('#members').innerHTML = state.members.map(function (m, i) {
+      return '<label>成員 ' + (i + 1) + '<input type="text" data-mem="' + i + '" value="' + esc(m) + '" maxlength="12"></label>';
+    }).join('');
+    $$('[data-mem]').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        state.members[+inp.dataset.mem] = inp.value.trim() || ('成員 ' + (+inp.dataset.mem + 1));
+        save('members', state.members);
+        renderPayerOptions(); renderSharers(); renderExpenses();
+      });
+    });
+    renderPayerOptions(); renderSharers();
+  }
+
+  function renderPayerOptions() {
+    var sel = $('#expPayer'), cur = sel.value;
+    sel.innerHTML = state.members.map(function (m, i) {
+      return '<option value="' + i + '">' + esc(m) + '</option>';
+    }).join('');
+    sel.value = cur && cur < state.members.length ? cur : '0';
+  }
+
+  var shareSel = null;   // 目前勾選的分攤者
+  function renderSharers() {
+    if (!shareSel || shareSel.length !== state.members.length) {
+      shareSel = state.members.map(function () { return true; });
+    }
+    $('#expShare').innerHTML = state.members.map(function (m, i) {
+      return '<label class="' + (shareSel[i] ? 'on' : '') + '"><input type="checkbox" data-sh="' + i + '"' +
+        (shareSel[i] ? ' checked' : '') + '>' + esc(m) + '</label>';
+    }).join('');
+    $$('[data-sh]').forEach(function (b) {
+      b.addEventListener('change', function () {
+        shareSel[+b.dataset.sh] = b.checked;
+        b.closest('label').classList.toggle('on', b.checked);
+        updateShareCount();
+      });
+    });
+    updateShareCount();
+  }
+  function updateShareCount() {
+    var n = shareSel.filter(Boolean).length;
+    $('#shareCount').textContent = n ? '除以 ' + n + ' 人' : '請至少勾一個人';
+    $('#expAdd').disabled = n === 0;
+  }
+
+  function addExpense() {
+    var title = $('#expTitle').value.trim();
+    var amount = parseFloat($('#expAmount').value);
+    if (!title) { $('#expTitle').focus(); return; }
+    if (isNaN(amount) || amount <= 0) { $('#expAmount').focus(); return; }
+    var share = [];
+    shareSel.forEach(function (on, i) { if (on) share.push(i); });
+    if (!share.length) return;
+    state.expenses.push({
+      id: 'e' + Date.now(), title: title, amount: amount,
+      cur: $('#expCur').value, payer: +$('#expPayer').value, share: share, at: todayISO()
+    });
+    save('expenses', state.expenses);
+    $('#expTitle').value = ''; $('#expAmount').value = '';
+    renderExpenses();
+    $('#expTitle').focus();
+  }
+
+  function renderExpenses() {
+    var list = state.expenses, r = rate();
+    if (!list.length) {
+      $('#expList').innerHTML = '<div class="card empty">還沒有任何代墊紀錄。<br>在上面記一筆，下面就會自動算出誰該還誰多少。</div>';
+      $('#expSummary').textContent = '';
+      $('#settle').innerHTML = '<div class="card empty">有紀錄之後，這裡會列出最少次數的還錢方式。</div>';
+      return;
+    }
+
+    var totalJPY = 0;
+    list.forEach(function (e) { totalJPY += toJPY(e.amount, e.cur); });
+    $('#expSummary').textContent = '共 ' + list.length + ' 筆 · ' + yen(totalJPY) + '（約 ' + ntd(totalJPY * r) + '）';
+
+    $('#expList').innerHTML = '<div class="card">' + list.slice().reverse().map(function (e) {
+      var jpy = toJPY(e.amount, e.cur);
+      var names = e.share.map(function (i) { return state.members[i] || ('成員 ' + (i + 1)); });
+      return '<div class="exp-row">' +
+        '<div class="exp-main">' +
+          '<div class="t">' + esc(e.title) + '</div>' +
+          '<div class="s"><b>' + esc(state.members[e.payer] || '?') + '</b> 先付 · 分給 ' + e.share.length + ' 人（' + esc(names.join('、')) + '）· 每人 ' + yen(jpy / e.share.length) + '</div>' +
+        '</div>' +
+        '<div class="exp-amt">' +
+          '<div class="a">' + (e.cur === 'TWD' ? ntd(e.amount) : yen(e.amount)) + '</div>' +
+          '<div class="b">' + (e.cur === 'TWD' ? '≈ ' + yen(jpy) : '≈ ' + ntd(jpy * r)) + '</div>' +
+        '</div>' +
+        '<button class="del" data-xdel="' + esc(e.id) + '" title="刪除">✕</button>' +
+        '</div>';
+    }).join('') + '<div class="total-row"><span>合計</span><span>' + yen(totalJPY) + '　<small style="color:var(--muted)">≈ ' + ntd(totalJPY * r) + '</small></span></div></div>';
+
+    $$('[data-xdel]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.expenses = state.expenses.filter(function (e) { return e.id !== b.dataset.xdel; });
+        save('expenses', state.expenses);
+        renderExpenses();
+      });
+    });
+
+    renderSettlement();
+  }
+
+  function balances() {
+    var paid = state.members.map(function () { return 0; });
+    var owed = state.members.map(function () { return 0; });
+    state.expenses.forEach(function (e) {
+      var jpy = toJPY(e.amount, e.cur);
+      if (paid[e.payer] != null) paid[e.payer] += jpy;
+      var per = jpy / e.share.length;
+      e.share.forEach(function (i) { if (owed[i] != null) owed[i] += per; });
+    });
+    return state.members.map(function (m, i) { return { i: i, name: m, paid: paid[i], owed: owed[i], net: paid[i] - owed[i] }; });
+  }
+
+  function transfers(bal) {
+    var debt = bal.filter(function (b) { return b.net < -0.5; }).map(function (b) { return { i: b.i, v: -b.net }; });
+    var cred = bal.filter(function (b) { return b.net > 0.5; }).map(function (b) { return { i: b.i, v: b.net }; });
+    debt.sort(function (a, b) { return b.v - a.v; });
+    cred.sort(function (a, b) { return b.v - a.v; });
+    var out = [], di = 0, ci = 0;
+    while (di < debt.length && ci < cred.length) {
+      var amt = Math.min(debt[di].v, cred[ci].v);
+      if (amt > 0.5) out.push({ from: debt[di].i, to: cred[ci].i, amt: amt });
+      debt[di].v -= amt; cred[ci].v -= amt;
+      if (debt[di].v <= 0.5) di++;
+      if (cred[ci].v <= 0.5) ci++;
+    }
+    return out;
+  }
+
+  function renderSettlement() {
+    var bal = balances(), r = rate();
+    var rows = bal.map(function (b) {
+      var cls = b.net > 0.5 ? 'plus' : (b.net < -0.5 ? 'minus' : '');
+      var txt = b.net > 0.5 ? '應收 ' + yen(b.net) : (b.net < -0.5 ? '應付 ' + yen(-b.net) : '剛好打平');
+      return '<div class="bal"><span class="who">' + esc(b.name) + '<small>已墊 ' + yen(b.paid) + ' · 應分攤 ' + yen(b.owed) + '</small></span>' +
+        '<span class="num ' + cls + '">' + txt + '<small>≈ ' + ntd(Math.abs(b.net) * r) + '</small></span></div>';
+    }).join('');
+
+    var pays = transfers(bal);
+    var payHtml = pays.length
+      ? pays.map(function (p) {
+          return '<div class="pay"><span>' + esc(state.members[p.from]) + '</span><span class="arrow">➔</span>' +
+            '<span>' + esc(state.members[p.to]) + '</span>' +
+            '<span class="amt">' + yen(p.amt) + '<small>≈ ' + ntd(p.amt * r) + '</small></span></div>';
+        }).join('')
+      : '<div class="empty">目前大家剛好打平，不用互相轉帳。</div>';
+
+    $('#settle').innerHTML =
+      '<div class="card card-pad">' + rows + '</div>' +
+      '<h3 style="font-size:.95rem;margin:16px 0 8px;color:var(--muted)">最少次數的還錢方式</h3>' +
+      '<div class="card">' + payHtml + '</div>';
+  }
+
+  function exportText() {
+    var bal = balances(), r = rate(), L = [];
+    L.push('【' + TRIP.meta.title + '｜代墊明細】');
+    L.push('匯率 1 JPY = ' + r.toFixed(4) + ' TWD' + (state.fxManual != null ? '（手動）' : ''));
+    L.push('');
+    state.expenses.forEach(function (e) {
+      var jpy = toJPY(e.amount, e.cur);
+      L.push('· ' + e.title + '　' + (e.cur === 'TWD' ? ntd(e.amount) : yen(e.amount)) +
+             '　' + state.members[e.payer] + ' 先付，分給 ' + e.share.length + ' 人（每人 ' + yen(jpy / e.share.length) + '）');
+    });
+    var total = 0; state.expenses.forEach(function (e) { total += toJPY(e.amount, e.cur); });
+    L.push('');
+    L.push('合計 ' + yen(total) + '（約 ' + ntd(total * r) + '）');
+    L.push('');
+    L.push('— 結算 —');
+    bal.forEach(function (b) {
+      L.push(b.name + '：已墊 ' + yen(b.paid) + '，應分攤 ' + yen(b.owed) + ' ➔ ' +
+        (b.net > 0.5 ? '應收 ' + yen(b.net) : b.net < -0.5 ? '應付 ' + yen(-b.net) : '打平'));
+    });
+    var pays = transfers(bal);
+    if (pays.length) {
+      L.push('');
+      pays.forEach(function (p) { L.push(state.members[p.from] + ' ➔ ' + state.members[p.to] + '　' + yen(p.amt) + '（約 ' + ntd(p.amt * r) + '）'); });
+    }
+    var text = L.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { flash($('#expExport'), '已複製 ✓'); },
+                                               function () { window.prompt('手動複製：', text); });
+    } else { window.prompt('手動複製：', text); }
+  }
+  function flash(btn, msg) {
+    var old = btn.textContent;
+    btn.textContent = msg;
+    setTimeout(function () { btn.textContent = old; }, 1600);
+  }
+
+  function bindSplit() {
+    $('#expAdd').addEventListener('click', addExpense);
+    $('#expAmount').addEventListener('keydown', function (e) { if (e.key === 'Enter') addExpense(); });
+    $('#expTitle').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#expAmount').focus(); });
+    $('#shareAll').addEventListener('click', function () { shareSel = state.members.map(function () { return true; }); renderSharers(); });
+    $('#shareNone').addEventListener('click', function () { shareSel = state.members.map(function () { return false; }); renderSharers(); });
+    $('#expExport').addEventListener('click', exportText);
+    $('#expClear').addEventListener('click', function () {
+      if (!state.expenses.length) return;
+      if (!confirm('確定要清空全部 ' + state.expenses.length + ' 筆代墊紀錄嗎？這個動作無法復原。')) return;
+      state.expenses = []; save('expenses', state.expenses); renderExpenses();
+    });
+  }
+
   /* ================= 啟動 ================= */
   function init() {
     renderHero();
     renderInfo();
     renderChecklist();
     renderSwap();
+    renderMembers();
+    bindFX();
+    bindSplit();
+    renderFX();
+
+    $$('.tab').forEach(function (b) { b.addEventListener('click', function () { setTab(b.dataset.tab); }); });
     $('#wSun').addEventListener('click', function () { setWeather('sun'); });
     $('#wRain').addEventListener('click', function () { setWeather('rain'); });
     $('#wBoth').addEventListener('click', function () { setWeather('both'); });
     setWeather(state.w);
+    setTab(state.tab);
 
     $('#btnPrint').addEventListener('click', function () { window.print(); });
     $('#btnReset').addEventListener('click', function () {
-      if (!confirm('確定要清除所有勾選、加選與自訂行程，回到預設狀態嗎？')) return;
-      ['w', 'checks', 'extras', 'custom'].forEach(function (k) { localStorage.removeItem(KEY + k); });
+      if (!confirm('清除 Checklist 勾選、加選與自訂行程，回到預設狀態嗎？（代墊紀錄不會被刪除）')) return;
+      ['w', 'checks', 'extras', 'custom', 'tab'].forEach(function (k) { localStorage.removeItem(KEY + k); });
       location.reload();
     });
     $('#btnToday').addEventListener('click', function () {
@@ -310,6 +585,8 @@
       if (!d) { alert('今天不在旅程期間內（' + TRIP.meta.start + ' ～ ' + TRIP.meta.end + '）'); return; }
       document.getElementById(d.id).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+
+    fetchRate(0);   // 背景抓即時匯率
   }
 
   document.addEventListener('DOMContentLoaded', init);
