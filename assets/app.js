@@ -97,13 +97,26 @@
         '</div>';
     }).join('');
 
-    $('#stays').innerHTML = '<div class="card card-pad">' + TRIP.stays.map(function (s) {
-      return '<div class="kv"><b>' + esc(s.when) + '</b><span><b style="font-weight:700">' + esc(s.name) +
-        '</b><br><span class="note" style="margin:0">' + esc(s.note) + '</span></span></div>';
-    }).join('') + '</div>';
+    $('#stays').innerHTML = TRIP.stays.map(function (s) {
+      var access = (s.access || []).map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('');
+      var warn = (s.warn || []).map(function (w) { return '<div class="stay-warn">' + esc(w) + '</div>'; }).join('');
+      return '<div class="card">' +
+        '<div class="stay-head">' + esc(s.when) + '</div>' +
+        '<div class="card-pad">' +
+          '<div class="stay-name">' + esc(s.name) + (s.stars ? ' <span class="stars">' + esc(s.stars) + '</span>' : '') + '</div>' +
+          (s.nameJa ? '<div class="stay-ja">' + esc(s.nameJa) + '</div>' : '') +
+          '<div class="kv"><b>地址</b><span>' + esc(s.addr) +
+            (s.map ? ' <a class="map" target="_blank" rel="noopener" href="' + mapURL(s.map) + '">📍 地圖</a>' : '') +
+            (s.addrEn ? '<br><span class="note" style="margin:0">' + esc(s.addrEn) + '</span>' : '') + '</span></div>' +
+          '<div class="kv"><b>入住退房</b><span>' + esc(s.inout) + '</span></div>' +
+          (access ? '<div class="kv"><b>交通</b><span><ul class="stay-ul">' + access + '</ul></span></div>' : '') +
+          (s.near ? '<div class="kv"><b>周邊</b><span>' + esc(s.near) + '</span></div>' : '') +
+          (s.note ? '<p class="note">' + esc(s.note) + '</p>' : '') + warn +
+        '</div></div>';
+    }).join('');
 
     $('#transit').innerHTML = '<div class="card card-pad">' + TRIP.transit.map(function (t) {
-      return '<div class="kv"><b>' + esc(t.route) + '</b><span>' + esc(t.how) +
+      return '<div class="kv kv-wide"><b>' + esc(t.route) + '</b><span>' + esc(t.how) +
         '<br><span class="note" style="margin:0">' + esc(t.time) + '</span></span></div>';
     }).join('') + '</div>';
 
