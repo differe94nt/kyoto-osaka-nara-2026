@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="description" content="2026 京阪奈 6 天 5 夜行程表：每日晴天／雨天雙軌方案、可替換景點模組、行前 Checklist">
+<title>2026 京阪奈 6 天 5 夜</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛩️</text></svg>">
+</head>
+<body data-w="sun">
+
+<header class="hero">
+  <h1 id="heroTitle">2026 京阪奈 6 天 5 夜</h1>
+  <p id="heroSub"></p>
+  <div class="countdown" id="countdown"></div>
+</header>
+
+<!-- 天氣切換 + 日期快速跳轉（滾動時固定在頂端） -->
+<div class="bar">
+  <div class="bar-inner">
+    <div class="switch">
+      <button id="wSun"  aria-pressed="true">☀️ 晴天</button>
+      <button id="wRain" aria-pressed="false">🌧️ 雨天</button>
+      <button id="wBoth" aria-pressed="false">📋 全部</button>
+    </div>
+    <nav class="daynav" id="daynav"></nav>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ============ 每日行程 ============ -->
+  <section>
+    <h2 class="h2">🗓️ 每日行程 <small>按上方按鈕切換晴天／雨天方案</small></h2>
+    <div id="days"></div>
+  </section>
+
+  <!-- ============ 可替換模組 ============ -->
+  <section>
+    <h2 class="h2">🔁 可替換／加選行程 <small>勾選即插入當天時間軸，選擇會自動記住</small></h2>
+    <div class="swap" id="swap"></div>
+    <div class="tools">
+      <button class="tool" id="btnToday">📍 跳到今天</button>
+      <button class="tool" id="btnPrint">🖨️ 列印／存成 PDF</button>
+      <button class="tool" id="btnReset">↺ 全部重設</button>
+    </div>
+  </section>
+
+  <!-- ============ 行前 Checklist ============ -->
+  <section>
+    <h2 class="h2">✅ 出發前 Checklist <small><span id="clDone">0</span> / <span id="clTotal">0</span> 完成</small></h2>
+    <div class="card card-pad">
+      <div class="cl-head">
+        <div class="progress"><i id="clBar"></i></div>
+      </div>
+      <div id="checklist"></div>
+    </div>
+  </section>
+
+  <!-- ============ 航班 ============ -->
+  <section>
+    <h2 class="h2">✈️ 航班</h2>
+    <div id="flights"></div>
+  </section>
+
+  <!-- ============ 住宿 ============ -->
+  <section>
+    <h2 class="h2">🏨 住宿</h2>
+    <div id="stays"></div>
+  </section>
+
+  <!-- ============ 交通速查 ============ -->
+  <section>
+    <h2 class="h2">🚉 主要交通速查</h2>
+    <div id="transit"></div>
+  </section>
+
+  <!-- ============ 緊急聯絡 ============ -->
+  <section>
+    <h2 class="h2">🆘 緊急聯絡 <small>點擊可直接撥號</small></h2>
+    <div id="emergency"></div>
+  </section>
+
+</main>
+
+<footer>
+  營業時間、票價與活動場次請於出發前再確認一次 · 資料可在 <code>data/itinerary.js</code> 自行增修
+</footer>
+
+<script src="data/itinerary.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
